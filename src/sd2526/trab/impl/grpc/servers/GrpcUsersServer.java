@@ -1,32 +1,22 @@
 package sd2526.trab.impl.grpc.servers;
 
-import java.io.IOException;
-import java.util.List;
 import java.util.logging.Logger;
-
-import sd2526.trab.api.java.Users;
+import javax.net.ssl.SSLContext;
+import sd2526.trab.impl.utils.SslContextFactory;
 
 public class GrpcUsersServer extends AbstractGrpcServer {
-public static final int PORT = 13456;
-	
+	public static final int PORT = 8083;
 	private static Logger Log = Logger.getLogger(GrpcUsersServer.class.getName());
 
-	public GrpcUsersServer() {
-		super( Log, Users.SERVICE_NAME, PORT);
+	public GrpcUsersServer(String domain) {
+		super(Log, "Users@" + domain, PORT);
 	}
-	
-	@Override
-	protected List<GrpcController> controllers(String uri) {
-		return List.of( new GrpcUsersController(), new GrpcAdminUsersController() );
+
+	public static void main(String[] args) throws Exception {
+		String domain = args.length > 0 ? args[0] : "ourorg0";
+		String keystoreFile = String.format("users.%s.jks", domain);
+
+		SSLContext sslContext = SslContextFactory.getContext(keystoreFile, "changeit");
+		new GrpcUsersServer(domain).start(new GrpcUsersController(), sslContext);
 	}
-	
-	public static void main(String[] args) {
-		try {
-			new GrpcUsersServer().start();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	
 }

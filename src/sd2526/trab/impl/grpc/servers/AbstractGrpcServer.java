@@ -1,48 +1,40 @@
 package sd2526.trab.impl.grpc.servers;
 
-
 import java.io.IOException;
-import java.util.List;
 import java.util.logging.Logger;
-
+import javax.net.ssl.SSLContext;
+import io.grpc.BindableService;
 import io.grpc.Server;
-import io.grpc.ServerBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import sd2526.trab.impl.discovery.Discovery;
 import sd2526.trab.impl.java.servers.AbstractServer;
 import sd2526.trab.impl.utils.IP;
 
-
 public abstract class AbstractGrpcServer extends AbstractServer {
-	private static final String SERVER_BASE_URI = "grpc://%s:%s%s";
-
-	private static final String GRPC_CTX = "/grpc";
-
-	protected final Server server;
+	protected static final String SERVER_BASE_URI = "grpc://%s:%s/grpc";
 
 	protected AbstractGrpcServer(Logger log, String service, int port) {
-		super(log, service, String.format(SERVER_BASE_URI, IP.hostAddress(), port, GRPC_CTX));
-		
-		var builder = ServerBuilder.forPort(port);
-		for( var s : controllers( super.serverURI ) )
-			builder.addService( s );
-		
-		this.server = builder.build();
+		super(log, service, String.format(SERVER_BASE_URI, IP.hostname(), port));
 	}
 
-	protected abstract List<GrpcController> controllers( String uri );
-	
-	protected void start() throws IOException {
-		
-		Discovery.getInstance().announce(serviceName(), super.serverURI);
-		
-		Log.info(String.format("%s gRPC Server ready @ %s\n", service, serverURI));
+	protected void start(BindableService service, SSLContext sslContext) throws IOException {
+		int port = Integer.parseInt(serverURI.split(":")[2].split("/")[0]);
 
-		server.start();
-		Runtime.getRuntime().addShutdownHook(new Thread( () -> {
-			System.err.println("*** shutting down gRPC server since JVM is shutting down");
-			server.shutdownNow();
-			System.err.println("*** server shut down");
+		Server server = NettyServerBuilder.forPort(port)
+				.addService(service)
+				.build()
+				.start();
+
+		Discovery.getInstance().announce(this.service, serverURI);
+
+		Log.info(String.format("%s gRPC Server ready @ %s\n", getClass().getSimpleName(), serverURI));
+
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			server.shutdown();
 		}));
 	}
-	
+
+	@Override
+	public void start() {
+	}
 }
