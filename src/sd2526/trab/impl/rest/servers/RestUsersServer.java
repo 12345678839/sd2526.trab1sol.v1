@@ -3,6 +3,7 @@ package sd2526.trab.impl.rest.servers;
 import java.util.logging.Logger;
 import javax.net.ssl.SSLContext;
 import org.glassfish.jersey.server.ResourceConfig;
+import sd2526.trab.impl.utils.IP;
 import sd2526.trab.impl.utils.SslContextFactory;
 
 public class RestUsersServer extends AbstractRestServer {
@@ -19,7 +20,8 @@ public class RestUsersServer extends AbstractRestServer {
 	}
 
 	public static void main(String[] args) throws Exception {
-		String domain = args.length > 0 ? args[0] : "ourorg0";
+		String hostname = IP.hostname();
+		String domain = hostname.contains(".") ? hostname.substring(hostname.lastIndexOf('.') + 1) : "ourorg0";
 		String keystoreFile = String.format("users.%s.jks", domain);
 
 		SSLContext sslContext = SslContextFactory.getContext(keystoreFile, "changeit");

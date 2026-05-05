@@ -4,7 +4,6 @@ import static sd2526.trab.impl.grpc.common.DataModelAdaptor.GrpcMessage_to_Messa
 import static sd2526.trab.impl.grpc.common.DataModelAdaptor.Message_to_GrpcMessage;
 
 import com.google.protobuf.Empty;
-
 import io.grpc.ServerServiceDefinition;
 import io.grpc.stub.StreamObserver;
 import sd2526.trab.api.java.Messages;
@@ -24,12 +23,13 @@ import sd2526.trab.impl.java.servers.JavaMessages;
 public class GrpcMessagesController extends GrpcController implements GrpcMessagesGrpc.AsyncService {
 
 	Messages impl = JavaMessages.getInstance();
-	
+
 	@Override
 	public ServerServiceDefinition bindService() {
 		return GrpcMessagesGrpc.bindService(this);
 	}
-	
+
+	@Override
 	public void postMessage(PostMessageArgs request, StreamObserver<PostMessageResult> responseObserver) {
 		super.toGrpcResult(responseObserver,
 				impl.postMessage(request.getPwd(), GrpcMessage_to_Message(request.getMessage())),
@@ -40,11 +40,12 @@ public class GrpcMessagesController extends GrpcController implements GrpcMessag
 	public void getInboxMessage(GetInboxMessageArgs request, StreamObserver<GrpcMessage> responseObserver) {
 		super.toGrpcResult(responseObserver,
 				impl.getInboxMessage(request.getUser(), request.getMid(), request.getPwd()),
-				(msg) -> Message_to_GrpcMessage( msg ));
+				(msg) -> Message_to_GrpcMessage(msg));
 	}
 
 	@Override
-	public void getAllInboxMessages(GetAllInboxMessagesArgs request, StreamObserver<GetAllInboxMessagesResult> responseObserver) {
+	public void getAllInboxMessages(GetAllInboxMessagesArgs request,
+			StreamObserver<GetAllInboxMessagesResult> responseObserver) {
 		super.toGrpcResult(responseObserver,
 				impl.getAllInboxMessages(request.getUser(), request.getPwd()),
 				(mids) -> GetAllInboxMessagesResult.newBuilder().addAllMids(mids).build());
