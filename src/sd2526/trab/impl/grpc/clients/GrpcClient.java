@@ -7,31 +7,36 @@ import static sd2526.trab.api.java.Result.ErrorCode.INTERNAL_ERROR;
 import java.net.URI;
 import java.util.function.Supplier;
 
-import io.grpc.Channel;
+import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import io.grpc.netty.shaded.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import sd2526.trab.api.java.Result;
 import sd2526.trab.api.java.Result.ErrorCode;
 
 public class GrpcClient {
 
 	final protected URI serverURI;
-	final protected Channel channel;
+	final protected ManagedChannel channel;
 
 	protected GrpcClient(String serverUrl) {
 		this.serverURI = URI.create(serverUrl);
 		try {
 			var sslContext = GrpcSslContexts.forClient()
-					.trustManager(io.grpc.netty.shaded.io.netty.handler.ssl.util.InsecureTrustManagerFactory.INSTANCE)
+					.trustManager(InsecureTrustManagerFactory.INSTANCE)
 					.build();
 
-			this.channel = NettyChannelBuilder
+			ManagedChannel mc = NettyChannelBuilder
 					.forAddress(serverURI.getHost(), serverURI.getPort())
 					.sslContext(sslContext)
 					.enableRetry()
 					.build();
+
+			mc.getState(true);
+
+			this.channel = mc;
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to create gRPC TLS channel", e);
 		}

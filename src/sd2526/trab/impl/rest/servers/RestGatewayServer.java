@@ -7,20 +7,22 @@ import sd2526.trab.impl.utils.SslContextFactory;
 
 public class RestGatewayServer extends AbstractRestServer {
 
-	public static final int PORT = 6666;
+	public static final int PORT = 8082;
 	private static Logger Log = Logger.getLogger(RestGatewayServer.class.getName());
 
 	RestGatewayServer() {
-		super(Log, "gateway", PORT);
+		super(Log, "Messages", PORT);
 	}
 
 	@Override
 	void registerResources(ResourceConfig config) {
-		config.registerInstances(new RestUsersResource(true), new RestMessagesResource(true));
+		config.register(new RestUsersResource(true));
+		config.register(new RestMessagesResource(true));
 	}
 
 	public static void main(String[] args) throws Exception {
-		String keystoreFile = args.length > 0 ? args[0] : "users.ourorg0.jks";
+		String domain = args.length > 0 ? args[0] : "ourorg0";
+		String keystoreFile = String.format("messages1.%s.jks", domain);
 		SSLContext sslContext = SslContextFactory.getContext(keystoreFile, "changeit");
 		new RestGatewayServer().start(sslContext);
 	}
