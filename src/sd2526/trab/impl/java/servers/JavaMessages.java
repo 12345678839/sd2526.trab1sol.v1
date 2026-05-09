@@ -31,7 +31,6 @@ import sd2526.trab.impl.api.java.AdminMessages;
 import sd2526.trab.impl.db.DB;
 import sd2526.trab.impl.java.clients.Clients;
 import sd2526.trab.impl.utils.IP;
-import sd2526.trab.impl.utils.Sleep;
 
 public class JavaMessages extends JavaBaseService implements Messages, AdminMessages {
 
@@ -149,17 +148,25 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		return Clients.AdminUsersClient.get().checkUsers(addresses);
 	}
 
+	// Changed here
 	private void deliverToKnownLocalRecipients(Collection<String> addresses, Message msg) {
-		Log.info(() -> "deliverToKnownLocalRecipients : local known addresses = %s, msg = %s\n".formatted(addresses, msg));
+
+		Log.info(() -> "deliverToKnownLocalRecipients : local known addresses = %s, msg = %s\n"
+				.formatted(addresses, msg));
 
 		DB.transaction((hibernate) -> {
+			var existing = hibernate.getOne(msg.getId(), Message.class);
+
+			if (existing.isOK())
+				return ok();
+
 			hibernate.persistOne(msg);
+
 			for (var address : addresses)
 				hibernate.persistOne(new InboxEntry(msg.getId(), getName(address)));
 
 			return ok();
 		});
-
 	}
 
 	private void reportUnknownLocalRecipients(Collection<String> addresses, Message msg) {
@@ -256,17 +263,21 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		}
 	}
 
+	// Changed here
 	public Result<String> doAsyncPost(User sender, Message msg) {
 
 		return getCachedMessage(msg.originId()).mapValue(Message::getId).orElse(() -> {
 
 			msg.setId("%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet()));
 
-			messagesCache.put(msg.originId(), new Message(msg)); // For ensuring idempotency...
+			messagesCache.put(msg.originId(), new Message(msg));
 
-			msg.setSender("%s <%s@%s>".formatted(sender.getDisplayName(), sender.getName(), sender.getDomain()));
+			msg.setSender("%s <%s@%s>".formatted(
+					sender.getDisplayName(),
+					sender.getName(),
+					sender.getDomain()));
 
-			messagesCache.put(msg.getId(), msg); // For enabling delete of messages...
+			messagesCache.put(msg.getId(), msg);
 
 			var localAdresses = getLocalRecipientAddresses(msg);
 			var remoteAddresses = getRemoteRecipientAddresses(msg);
@@ -280,23 +291,31 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			if (remoteAddresses.size() > 0) {
 
 				var remoteTargets = remoteAddresses.stream().collect(
-						Collectors.groupingBy(super::getDomain, Collectors.mapping(address -> address, Collectors.toSet())));
+						Collectors.groupingBy(
+								super::getDomain,
+								Collectors.mapping(address -> address, Collectors.toSet())));
 
 				for (var e : remoteTargets.entrySet()) {
+
 					var domain = e.getKey();
 					var domainRecipientAddressess = e.getValue();
 
-					jobs.submit(domain, () -> {
-						var res = super.reTry(() -> Clients.AdminMessagesClient.get(domain).remotePostMessage(msg),
-								REMOTE_COMM_DEADLINE);
-						if (res.error() == ErrorCode.TIMEOUT) {
-							for (var address : domainRecipientAddressess)
-								postToLocalInboxes(Set.of(msg.senderAddress()), msg.cloneWithTimeout(address));
-						}
-					});
+					var res = super.reTry(
+							() -> Clients.AdminMessagesClient.get(domain).remotePostMessage(msg),
+							REMOTE_COMM_DEADLINE);
 
+					if (res.error() == ErrorCode.TIMEOUT) {
+
+						for (var address : domainRecipientAddressess) {
+
+							postToLocalInboxes(
+									Set.of(msg.senderAddress()),
+									msg.cloneWithTimeout(address));
+						}
+					}
 				}
 			}
+
 			return Result.ok(msg.getId());
 		});
 	}
@@ -317,7 +336,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	public void doAsyncRemotePost(String remoteDomain, Message msg) {
 		Log.info(() -> "\nenqueueRemotePost : remoteDomain=%s, msg = %s\n".formatted(remoteDomain, msg));
 		jobs.submit(remoteDomain, () -> {
-			super.reTry(() -> Clients.AdminMessagesClient.get(remoteDomain).remotePostMessage(msg), REMOTE_COMM_DEADLINE);
+			super.reTry(() -> Clients.AdminMessagesClient.get(remoteDomain).remotePostMessage(msg),
+					REMOTE_COMM_DEADLINE);
 		});
 	}
 
