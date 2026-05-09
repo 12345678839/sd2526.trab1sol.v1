@@ -3,6 +3,7 @@ package sd2526.trab.impl.rest.servers;
 import java.util.logging.Logger;
 import javax.net.ssl.SSLContext;
 import org.glassfish.jersey.server.ResourceConfig;
+import sd2526.trab.impl.java.servers.JavaMessages;
 import sd2526.trab.impl.utils.IP;
 import sd2526.trab.impl.utils.SslContextFactory;
 
@@ -23,6 +24,8 @@ public class RestMessagesServer extends AbstractRestServer {
 		String hostname = IP.hostname();
 		String domain = hostname.contains(".") ? hostname.substring(hostname.lastIndexOf('.') + 1) : "ourorg0";
 		String keystoreFile = hostname + ".jks";
+
+		JavaMessages.getInstance();
 
 		SSLContext sslContext = SslContextFactory.getContext(keystoreFile, "changeit");
 		new RestMessagesServer(domain).start(sslContext);

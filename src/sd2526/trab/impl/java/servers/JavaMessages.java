@@ -67,6 +67,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 
 	private JavaMessages() {
 		this.jobs = new JobDispatcher();
+		DB.select("SELECT m.mid FROM InboxEntry m WHERE m.recipient = '__warmup__'", String.class);
 	}
 
 	@Override
