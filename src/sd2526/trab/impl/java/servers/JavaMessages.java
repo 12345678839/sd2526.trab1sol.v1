@@ -237,15 +237,16 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	}
 
 	public Result<Void> doAsyncDelete(Message msg) {
-		var domains = msg.getDestination().stream().map(r -> r.split("@")[1]).collect(Collectors.toSet());
+		var domains = msg.getDestination().stream()
+				.map(r -> r.split("@")[1])
+				.collect(Collectors.toSet());
 		for (var domain : domains)
 			if (domain.equals(IP.domain()))
 				deleteFromLocalInbox(msg.getId());
 			else
-				jobs.submit(domain, () -> {
-					super.reTry(() -> Clients.AdminMessagesClient.get(domain).remoteDeleteMessage(msg.getId()),
-							REMOTE_COMM_DEADLINE);
-				});
+				super.reTry(
+						() -> Clients.AdminMessagesClient.get(domain).remoteDeleteMessage(msg.getId()),
+						REMOTE_COMM_DEADLINE);
 		return Result.ok();
 	}
 
