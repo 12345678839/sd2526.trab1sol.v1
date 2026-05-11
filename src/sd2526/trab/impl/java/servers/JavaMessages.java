@@ -143,8 +143,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 				var errorMsg = msg.cloneWithUserNotFound(recipientAddress);
 				if (super.isLocalAddress(senderAddress)) {
 					DB.transaction((hibernate) -> {
-						hibernate.persistOne(new InboxEntry(errorMsg.getId(), getName(senderAddress)));
 						hibernate.persistOne(errorMsg);
+						hibernate.persistOne(new InboxEntry(errorMsg.getId(), getName(senderAddress)));
 						return ok();
 					});
 				} else
@@ -176,10 +176,12 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	private Result<Void> deleteFromLocalInbox(String mid) {
 		var sql = "SELECT * FROM InboxEntry e WHERE e.mid = '%s'".formatted(mid);
 		return DB.transaction(hibernate -> {
-			hibernate.getOne(mid, Message.class)
-					.thenWith(msg -> hibernate.deleteOne(msg));
-			return hibernate.select(sql, InboxEntry.class)
+			hibernate.select(sql, InboxEntry.class)
 					.thenWith((entries) -> hibernate.deleteMany(entries));
+
+			return hibernate.getOne(mid, Message.class)
+					.thenWith(msg -> hibernate.deleteOne(msg))
+					.mapToVoid();
 		});
 	}
 
