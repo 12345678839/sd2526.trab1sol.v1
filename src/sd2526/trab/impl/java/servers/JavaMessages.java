@@ -60,6 +60,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			.expireAfterWrite(Duration.ofMillis(REMOVED_INBOX_ENTRY_TTL))
 			.build();
 
+	public final ConcurrentHashMap<String, Boolean> deliveredMessages = new ConcurrentHashMap<>();
+
 	private JavaMessages() {
 		this.jobs = new JobDispatcher();
 		DB.select("SELECT m.mid FROM InboxEntry m WHERE m.recipient = '__warmup__'", String.class);
@@ -90,12 +92,13 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 
 	@Override
 	public Result<List<String>> searchInbox(String name, String pwd, String query) {
+		String escapedQuery = query.toUpperCase().replace("'", "''");
 		var sqlExpr = """
 				SELECT e.mid FROM InboxEntry e
 				INNER JOIN Message m ON e.mid = m.id
 				WHERE e.recipient = '%s'
 				AND (upper(m.subject) LIKE '%%%s%%' OR upper(m.contents) LIKE '%%%s%%')
-				""".formatted(name, query.toUpperCase(), query.toUpperCase());
+				""".formatted(name, escapedQuery, escapedQuery);
 
 		return getUser(name, pwd)
 				.then(() -> DB.select(sqlExpr, String.class));
@@ -242,6 +245,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 					});
 				}
 			}
+			deliveredMessages.put(msg.getId(), true);
 			return Result.ok(msg.getId());
 		});
 	}

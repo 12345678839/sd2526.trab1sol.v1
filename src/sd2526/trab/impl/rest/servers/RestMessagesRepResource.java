@@ -31,28 +31,30 @@ public class RestMessagesRepResource extends RestMessagesResource {
 
     KafkaReplicaManager.publish("post", null, pwd, null, msg);
 
-    if (counter != null) {
-      try {
-        for (int i = 0; i < 30; i++) {
-          if (counter.get() > currentCount) {
-            break;
-          }
-          Thread.sleep(100);
-        }
-      } catch (Exception ignore) {
-      }
-    } else {
-      try {
-        Thread.sleep(1000);
-      } catch (Exception ignore) {
-      }
-    }
-
     String domain = IP.domain();
     if (domain == null)
       domain = "ourorg0";
 
-    return domain + "+" + String.format("%04d", currentCount + 1);
+    String expectedId = domain + "+" + String.format("%04d", currentCount + 1);
+
+    JavaMessages javaMessages = JavaMessages.getInstance();
+    for (int i = 0; i < 50; i++) {
+      if (javaMessages.deliveredMessages.containsKey(expectedId)) {
+        javaMessages.deliveredMessages.remove(expectedId);
+        break;
+      }
+      try {
+        Thread.sleep(100);
+      } catch (Exception ignore) {
+      }
+    }
+
+    try {
+      Thread.sleep(400);
+    } catch (Exception ignore) {
+    }
+
+    return expectedId;
   }
 
   @Override
