@@ -1,26 +1,24 @@
 package sd2526.trab.impl.rest.servers;
 
-import java.net.URI;
 import java.util.logging.Logger;
 import javax.net.ssl.SSLContext;
-import org.glassfish.jersey.jdkhttp.JdkHttpServerFactory;
 import org.glassfish.jersey.server.ResourceConfig;
 
 import sd2526.trab.impl.java.servers.JavaMessages;
 import sd2526.trab.impl.utils.IP;
 import sd2526.trab.impl.utils.SslContextFactory;
+import sd2526.trab.kafka.KafkaReplicaManager;
 
-public class RestMessagesProxyServer extends AbstractRestServer {
-  public static final int PORT = 8085;
-  private static Logger Log = Logger.getLogger(RestMessagesProxyServer.class.getName());
+public class RestMessagesRepServer extends AbstractRestServer {
+  private static Logger Log = Logger.getLogger(RestMessagesRepServer.class.getName());
 
-  public RestMessagesProxyServer(String domain) {
-    super(Log, "Messages@" + domain, PORT);
+  public RestMessagesRepServer(String domain, int port) {
+    super(Log, "MessagesRep@" + domain, port);
   }
 
   @Override
   void registerResources(ResourceConfig config) {
-    config.register(RestMessagesResource.class);
+    config.register(RestMessagesRepResource.class);
   }
 
   public static void main(String[] args) throws Exception {
@@ -28,9 +26,12 @@ public class RestMessagesProxyServer extends AbstractRestServer {
     String domain = hostname.contains(".") ? hostname.substring(hostname.lastIndexOf('.') + 1) : "ourorg0";
     String keystoreFile = hostname + ".jks";
 
-    new Thread(() -> JavaMessages.getInstance()).start();
+    int port = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
+
+    JavaMessages.getInstance();
+    KafkaReplicaManager.init(domain);
 
     SSLContext sslContext = SslContextFactory.getContext(keystoreFile, "changeit");
-    new RestMessagesProxyServer(domain).start(sslContext);
+    new RestMessagesRepServer(domain, port).start(sslContext);
   }
 }

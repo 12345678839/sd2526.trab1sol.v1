@@ -37,6 +37,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	private static final int REMOTE_COMM_DEADLINE = 90000;
 	private static final long MESSAGES_CACHE_EXPIRATION = 30000;
 	private static final long DIRTY_INBOX_CACHE_EXPIRATION = 10000;
+	private static final long REMOVED_INBOX_ENTRY_TTL = 300000;
 
 	final JobDispatcher jobs;
 	final AtomicLong counter = new AtomicLong(0L);
@@ -53,6 +54,10 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 				DB.transaction((hibernate) -> hibernate.select(sqlExpr, Message.class)
 						.thenWith((orphans) -> hibernate.deleteMany(orphans)));
 			})
+			.build();
+
+	protected final Cache<String, Boolean> removedInboxEntries = CacheBuilder.newBuilder()
+			.expireAfterWrite(Duration.ofMillis(REMOVED_INBOX_ENTRY_TTL))
 			.build();
 
 	private JavaMessages() {
@@ -102,6 +107,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 				.then(() -> DB.deleteOne(new InboxEntry(mid, name))).mapToVoid()
 				.then(() -> {
 					gcDeletedMessageCache.put(mid, mid);
+					removedInboxEntries.put(mid + ":" + name, true);
 				});
 	}
 
@@ -129,8 +135,12 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	private void deliverToKnownLocalRecipients(Collection<String> addresses, Message msg) {
 		DB.transaction((hibernate) -> {
 			hibernate.persistOne(msg);
-			for (var address : addresses)
-				hibernate.persistOne(new InboxEntry(msg.getId(), getName(address)));
+			for (var address : addresses) {
+				var name = getName(address);
+				var tombstoneKey = msg.getId() + ":" + name;
+				if (removedInboxEntries.getIfPresent(tombstoneKey) == null)
+					hibernate.persistOne(new InboxEntry(msg.getId(), name));
+			}
 			return ok();
 		});
 	}
