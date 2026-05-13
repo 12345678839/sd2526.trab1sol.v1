@@ -13,27 +13,21 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
 public class KafkaSubscriber {
-    static public KafkaSubscriber createSubscriber(String addr, List<String> topics) {
+    static public KafkaSubscriber createSubscriber(String addr, List<String> topics, String groupId) {
 
         Properties props = new Properties();
 
         // List of pairs hostname:port that allows to contact kafka servers
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, addr);
 
-        // Values for setting the subscription mode (check the documentation on
-        // https://kafka.apache.org)
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        // props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
 
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, UUID.randomUUID().toString());
+        // A MÁGICA AQUI: Em vez de UUID aleatório, usamos o ID que passarmos
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 
-        // Class that can serialize the key format (string)
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-
-        // Class that can serialize the value of events (string)
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
 
-        // generates a new Kafka Subscriber with its own Kafka Consumer
         return new KafkaSubscriber(new KafkaConsumer<String, String>(props), topics);
     }
 

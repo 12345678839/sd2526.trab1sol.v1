@@ -2,6 +2,7 @@ package sd2526.trab.kafka;
 
 import java.util.List;
 import java.util.Scanner;
+import java.util.UUID;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -14,9 +15,11 @@ public class KafkaReceiver {
 
         sc.close();
 
-        KafkaUtils.createTopic(topic); // Attempts to create a topic (might already exist)
+        KafkaUtils.createTopic(topic);
 
-        KafkaSubscriber subscriber = KafkaSubscriber.createSubscriber("localhost:9092, kafka:9092", List.of(topic));
+        String groupId = UUID.randomUUID().toString();
+        KafkaSubscriber subscriber = KafkaSubscriber.createSubscriber("localhost:9092, kafka:9092", List.of(topic),
+                groupId);
 
         subscriber.start(new RecordProcessor() {
             @Override

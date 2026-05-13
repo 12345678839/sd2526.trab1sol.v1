@@ -67,6 +67,61 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		DB.select("SELECT m.mid FROM InboxEntry m WHERE m.recipient = '__warmup__'", String.class);
 	}
 
+	public Result<String> directPost(String pwd, Message msg) {
+		if (msg == null || msg.getId() == null)
+			return error(BAD_REQUEST);
+
+		if (deliveredMessages.containsKey(msg.getId()))
+			return ok(msg.getId());
+
+		return getUser(msg.getSender(), pwd)
+				.thenWith(user -> {
+					try {
+						String[] parts = msg.getId().split("\\+");
+						if (parts.length == 2) {
+							long n = Long.parseLong(parts[1]);
+							counter.updateAndGet(c -> Math.max(c, n));
+						}
+					} catch (Exception ignored) {
+					}
+
+					messagesCache.put(msg.getId(), msg);
+					if (msg.originId() != null)
+						messagesCache.put(msg.originId(), msg);
+
+					var localAddresses = getLocalRecipientAddresses(msg);
+					if (!localAddresses.isEmpty())
+						deliverToKnownLocalRecipients(localAddresses, msg);
+
+					deliveredMessages.put(msg.getId(), true);
+					return ok(msg.getId());
+				});
+	}
+
+	public void syncCounterFromDB() {
+		try {
+			var result = DB.select("SELECT m.id FROM Message m", String.class);
+			if (result.isOK() && !result.value().isEmpty()) {
+				long maxId = result.value().stream()
+						.filter(id -> id != null && id.contains("+"))
+						.mapToLong(id -> {
+							try {
+								return Long.parseLong(id.split("\\+")[1]);
+							} catch (Exception e) {
+								return 0L;
+							}
+						})
+						.max()
+						.orElse(0L);
+
+				long updated = counter.updateAndGet(c -> Math.max(c, maxId));
+				Log.info("Counter synchronized from DB to: " + updated);
+			}
+		} catch (Exception e) {
+			Log.warning("Failed to sync counter from DB: " + e.getMessage());
+		}
+	}
+
 	@Override
 	public Result<String> postMessage(String pwd, Message msg) {
 		return getUser(msg.getSender(), pwd)
@@ -233,10 +288,12 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 				postToLocalInboxes(localAdresses, msg);
 			if (remoteAddresses.size() > 0) {
 				var remoteTargets = remoteAddresses.stream().collect(
-						Collectors.groupingBy(super::getDomain, Collectors.mapping(address -> address, Collectors.toSet())));
+						Collectors.groupingBy(super::getDomain,
+								Collectors.mapping(address -> address, Collectors.toSet())));
 				for (var e : remoteTargets.entrySet()) {
 					jobs.submit(e.getKey(), () -> {
-						var res = super.reTry(() -> Clients.AdminMessagesClient.get(e.getKey()).remotePostMessage(msg),
+						var res = super.reTry(
+								() -> Clients.AdminMessagesClient.get(e.getKey()).remotePostMessage(msg),
 								REMOTE_COMM_DEADLINE);
 						if (res.error() == ErrorCode.TIMEOUT) {
 							for (var address : e.getValue())
@@ -266,7 +323,9 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 
 	public void doAsyncRemotePost(String remoteDomain, Message msg) {
 		jobs.submit(remoteDomain, () -> {
-			super.reTry(() -> Clients.AdminMessagesClient.get(remoteDomain).remotePostMessage(msg), REMOTE_COMM_DEADLINE);
+			super.reTry(
+					() -> Clients.AdminMessagesClient.get(remoteDomain).remotePostMessage(msg),
+					REMOTE_COMM_DEADLINE);
 		});
 	}
 
@@ -289,7 +348,9 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	}
 
 	private Set<String> getRemoteRecipientAddresses(Message msg) {
-		return msg.getDestination().stream().filter(Predicate.not(super::isLocalAddress)).collect(Collectors.toSet());
+		return msg.getDestination().stream()
+				.filter(Predicate.not(super::isLocalAddress))
+				.collect(Collectors.toSet());
 	}
 
 	static JavaMessages instance;
