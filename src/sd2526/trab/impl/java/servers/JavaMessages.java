@@ -74,28 +74,25 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		if (deliveredMessages.containsKey(msg.getId()))
 			return ok(msg.getId());
 
-		return getUser(msg.getSender(), pwd)
-				.thenWith(user -> {
-					try {
-						String[] parts = msg.getId().split("\\+");
-						if (parts.length == 2) {
-							long n = Long.parseLong(parts[1]);
-							counter.updateAndGet(c -> Math.max(c, n));
-						}
-					} catch (Exception ignored) {
-					}
+		try {
+			String[] parts = msg.getId().split("\\+");
+			if (parts.length == 2) {
+				long n = Long.parseLong(parts[1]);
+				counter.updateAndGet(c -> Math.max(c, n));
+			}
+		} catch (Exception ignored) {
+		}
 
-					messagesCache.put(msg.getId(), msg);
-					if (msg.originId() != null)
-						messagesCache.put(msg.originId(), msg);
+		messagesCache.put(msg.getId(), msg);
+		if (msg.originId() != null)
+			messagesCache.put(msg.originId(), msg);
 
-					var localAddresses = getLocalRecipientAddresses(msg);
-					if (!localAddresses.isEmpty())
-						deliverToKnownLocalRecipients(localAddresses, msg);
+		var localAddresses = getLocalRecipientAddresses(msg);
+		if (!localAddresses.isEmpty())
+			deliverToKnownLocalRecipients(localAddresses, msg);
 
-					deliveredMessages.put(msg.getId(), true);
-					return ok(msg.getId());
-				});
+		deliveredMessages.put(msg.getId(), true);
+		return ok(msg.getId());
 	}
 
 	public void syncCounterFromDB() {

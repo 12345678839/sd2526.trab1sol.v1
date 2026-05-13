@@ -78,4 +78,27 @@ public class RestMessagesRepResource extends RestMessagesResource {
     } catch (Exception ignore) {
     }
   }
+
+  @Override
+  public void remotePostMessage(Message m) {
+    KafkaReplicaManager.publish("post", null, null, null, m);
+    try {
+      Thread.sleep(500);
+    } catch (Exception ignore) {
+    }
+  }
+
+  @Override
+  public void remoteDeleteMessage(String mid) {
+    KafkaReplicaManager.publish("delete", null, null, mid, null);
+    try {
+      Thread.sleep(500);
+    } catch (Exception ignore) {
+    }
+  }
+
+  @Override
+  public void remoteDeleteUserInbox(String name) {
+    super.resultOrThrow(JavaMessages.getInstance().remoteDeleteUserInbox(name));
+  }
 }
