@@ -18,6 +18,10 @@ public class RestMessagesRepResource extends RestMessagesResource {
 
   @Override
   public String postMessage(String pwd, Message msg) {
+    if (msg.getId() != null) {
+      return msg.getId();
+    }
+
     long currentCount = 0;
     AtomicLong counter = null;
 
