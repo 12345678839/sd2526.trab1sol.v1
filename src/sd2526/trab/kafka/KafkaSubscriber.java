@@ -17,12 +17,10 @@ public class KafkaSubscriber {
 
         Properties props = new Properties();
 
-        // List of pairs hostname:port that allows to contact kafka servers
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, addr);
 
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
-        // A MÁGICA AQUI: Em vez de UUID aleatório, usamos o ID que passarmos
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
 
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());

@@ -159,10 +159,13 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	@Override
 	public Result<Void> removeInboxMessage(String name, String mid, String pwd) {
 		return getUser(name, pwd)
-				.then(() -> DB.deleteOne(new InboxEntry(mid, name))).mapToVoid()
 				.then(() -> {
 					gcDeletedMessageCache.put(mid, mid);
 					removedInboxEntries.put(mid + ":" + name, true);
+
+					DB.deleteOne(new InboxEntry(mid, name));
+
+					return Result.ok((Void) null);
 				});
 	}
 
@@ -188,13 +191,19 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	}
 
 	private void deliverToKnownLocalRecipients(Collection<String> addresses, Message msg) {
+		if (gcDeletedMessageCache.getIfPresent(msg.getId()) != null) {
+			return;
+		}
+
 		DB.transaction((hibernate) -> {
 			hibernate.persistOne(msg);
 			for (var address : addresses) {
 				var name = getName(address);
 				var tombstoneKey = msg.getId() + ":" + name;
-				if (removedInboxEntries.getIfPresent(tombstoneKey) == null)
+
+				if (removedInboxEntries.getIfPresent(tombstoneKey) == null) {
 					hibernate.persistOne(new InboxEntry(msg.getId(), name));
+				}
 			}
 			return ok();
 		});
@@ -239,6 +248,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	}
 
 	private Result<Void> deleteFromLocalInbox(String mid) {
+		gcDeletedMessageCache.put(mid, mid);
+
 		var sql = "SELECT * FROM InboxEntry e WHERE e.mid = '%s'".formatted(mid);
 		return DB.transaction(hibernate -> {
 			hibernate.select(sql, InboxEntry.class)

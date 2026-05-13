@@ -1,6 +1,8 @@
 package sd2526.trab.impl.grpc.servers;
 
 import java.util.logging.Logger;
+
+import sd2526.trab.impl.discovery.Discovery;
 import sd2526.trab.impl.utils.IP;
 
 public class GrpcUsersServer extends AbstractGrpcServer {
@@ -15,8 +17,22 @@ public class GrpcUsersServer extends AbstractGrpcServer {
         String hostname = IP.hostname();
         String domain = hostname.contains(".") ? hostname.substring(hostname.lastIndexOf('.') + 1) : "ourorg0";
         String keystoreFile = String.format("users.%s.jks", domain);
-        new GrpcUsersServer(domain).start(keystoreFile, "changeit",
-                new GrpcUsersController(),
-                new GrpcAdminUsersController());
+
+        GrpcUsersServer server = new GrpcUsersServer(domain);
+
+        new Thread(() -> {
+            try {
+                server.start(keystoreFile, "changeit",
+                        new GrpcUsersController(),
+                        new GrpcAdminUsersController());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
+
+        Thread.sleep(1000);
+        Discovery.getInstance().announce(server.serviceName(),
+                "grpc://" + hostname + ":" + PORT + "/grpc");
+        Thread.currentThread().join();
     }
 }
