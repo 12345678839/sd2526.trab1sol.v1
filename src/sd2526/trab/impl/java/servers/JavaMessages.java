@@ -47,6 +47,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			.expireAfterWrite(Duration.ofMillis(MESSAGES_CACHE_EXPIRATION))
 			.build();
 
+	private final ConcurrentHashMap<String, Message> messagesWithRemoteDestinations = new ConcurrentHashMap<>();
+
 	protected final Cache<String, String> gcDeletedMessageCache = CacheBuilder.newBuilder()
 			.expireAfterWrite(Duration.ofMillis(DIRTY_INBOX_CACHE_EXPIRATION))
 			.removalListener((removed) -> {
@@ -71,18 +73,21 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		return "%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet());
 	}
 
-	// Verifica se uma mensagem já foi processada por esta réplica
 	public boolean messageExists(String mid) {
 		return deliveredMessages.containsKey(mid);
 	}
 
-	// Apaga apenas localmente sem propagar via HTTP
 	public Result<Void> deleteLocalOnly(String mid) {
+		messagesWithRemoteDestinations.remove(mid);
 		return deleteFromLocalInbox(mid);
 	}
 
 	public Message getMessageFromCache(String mid) {
-		return messagesCache.getIfPresent(mid);
+		var msg = messagesCache.getIfPresent(mid);
+		if (msg == null) {
+			msg = messagesWithRemoteDestinations.get(mid);
+		}
+		return msg;
 	}
 
 	public Result<String> directPost(String pwd, Message msg) {
@@ -289,11 +294,15 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 
 	@Override
 	public Result<Void> remoteDeleteMessage(String mid) {
+		messagesWithRemoteDestinations.remove(mid);
 		return deleteFromLocalInbox(mid);
 	}
 
 	protected Result<Message> getCachedMessage(String mid) {
 		var msg = messagesCache.getIfPresent(mid);
+		if (msg == null) {
+			msg = messagesWithRemoteDestinations.get(mid);
+		}
 		return msg != null ? ok(msg) : error(FORBIDDEN);
 	}
 
@@ -335,12 +344,15 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			if (!localAddresses.isEmpty())
 				postToLocalInboxes(localAddresses, msg);
 
+			Set<String> remoteAddresses = getRemoteRecipientAddresses(msg);
+			if (!remoteAddresses.isEmpty()) {
+				messagesWithRemoteDestinations.put(msg.getId(), msg);
+			}
+
 			deliveredMessages.put(msg.getId(), true);
 			return Result.ok(msg.getId());
 		}
 
-		// Caso não-replicado (RestMessagesServer): comportamento original com
-		// propagação HTTP
 		return getCachedMessage(msg.originId()).mapValue(Message::getId).orElse(() -> {
 			msg.setId("%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet()));
 			messagesCache.put(msg.originId(), new Message(msg));

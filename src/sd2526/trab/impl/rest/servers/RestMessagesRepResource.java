@@ -33,6 +33,11 @@ public class RestMessagesRepResource extends RestMessagesResource {
       }
     }
 
+    try {
+      Thread.sleep(1000);
+    } catch (Exception ignore) {
+    }
+
     return msgId;
   }
 

@@ -18,7 +18,7 @@ public class RestMessagesProxyServer extends AbstractRestServer {
 
   @Override
   void registerResources(ResourceConfig config) {
-    config.register(RestMessagesResource.class);
+    config.register(RestMessagesRepResource.class); // era RestMessagesResource.class
   }
 
   public static void main(String[] args) throws Exception {
