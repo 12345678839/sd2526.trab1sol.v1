@@ -33,8 +33,8 @@ public class RestMessagesRepServer extends AbstractRestServer {
 
     JavaMessages.getInstance();
 
-    KafkaReplicaManager.init(domain);
-
+    KafkaReplicaManager.init(domain, false);
+    KafkaReplicaManager.waitForReplay();
     SSLContext sslContext = SslContextFactory.getContext(keystoreFile, "changeit");
     new RestMessagesRepServer(domain, port).start(sslContext);
   }

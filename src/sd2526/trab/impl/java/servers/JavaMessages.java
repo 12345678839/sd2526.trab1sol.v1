@@ -67,6 +67,24 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		DB.select("SELECT m.mid FROM InboxEntry m WHERE m.recipient = '__warmup__'", String.class);
 	}
 
+	public String generateNextId() {
+		return "%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet());
+	}
+
+	// Verifica se uma mensagem já foi processada por esta réplica
+	public boolean messageExists(String mid) {
+		return deliveredMessages.containsKey(mid);
+	}
+
+	// Apaga apenas localmente sem propagar via HTTP
+	public Result<Void> deleteLocalOnly(String mid) {
+		return deleteFromLocalInbox(mid);
+	}
+
+	public Message getMessageFromCache(String mid) {
+		return messagesCache.getIfPresent(mid);
+	}
+
 	public Result<String> directPost(String pwd, Message msg) {
 		if (msg == null || msg.getId() == null)
 			return error(BAD_REQUEST);
@@ -101,7 +119,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			if (result.isOK() && !result.value().isEmpty()) {
 				String localPrefix = THIS_DOMAIN + "+";
 				long maxId = result.value().stream()
-						.filter(id -> id != null && id.startsWith(localPrefix)).mapToLong(id -> {
+						.filter(id -> id != null && id.startsWith(localPrefix))
+						.mapToLong(id -> {
 							try {
 								return Long.parseLong(id.split("\\+")[1]);
 							} catch (Exception e) {
@@ -162,9 +181,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 				.then(() -> {
 					gcDeletedMessageCache.put(mid, mid);
 					removedInboxEntries.put(mid + ":" + name, true);
-
 					DB.deleteOne(new InboxEntry(mid, name));
-
 					return Result.ok((Void) null);
 				});
 	}
@@ -191,19 +208,16 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	}
 
 	private void deliverToKnownLocalRecipients(Collection<String> addresses, Message msg) {
-		if (gcDeletedMessageCache.getIfPresent(msg.getId()) != null) {
+		if (gcDeletedMessageCache.getIfPresent(msg.getId()) != null)
 			return;
-		}
 
 		DB.transaction((hibernate) -> {
 			hibernate.persistOne(msg);
 			for (var address : addresses) {
 				var name = getName(address);
 				var tombstoneKey = msg.getId() + ":" + name;
-
-				if (removedInboxEntries.getIfPresent(tombstoneKey) == null) {
+				if (removedInboxEntries.getIfPresent(tombstoneKey) == null)
 					hibernate.persistOne(new InboxEntry(msg.getId(), name));
-				}
 			}
 			return ok();
 		});
@@ -244,7 +258,19 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 
 	@Override
 	public Result<Void> remotePostMessage(Message msg) {
-		return postToLocalInboxes(getLocalRecipientAddresses(msg), msg);
+		if (deliveredMessages.containsKey(msg.getId())) {
+			Log.info("remotePostMessage: idempotent skip for " + msg.getId());
+			return ok();
+		}
+
+		var result = postToLocalInboxes(getLocalRecipientAddresses(msg), msg);
+
+		if (result.isOK()) {
+			deliveredMessages.put(msg.getId(), true);
+			messagesCache.put(msg.getId(), msg);
+		}
+
+		return result;
 	}
 
 	private Result<Void> deleteFromLocalInbox(String mid) {
@@ -275,17 +301,18 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		private final ConcurrentHashMap<String, ExecutorService> executors = new ConcurrentHashMap<>();
 
 		public void submit(String domain, Runnable job) {
-			ExecutorService executor = executors.computeIfAbsent(domain, d -> Executors.newSingleThreadExecutor(r -> {
-				Thread t = new Thread(r);
-				t.setUncaughtExceptionHandler((thr, ex) -> ex.printStackTrace());
-				return t;
-			}));
+			ExecutorService executor = executors.computeIfAbsent(domain,
+					d -> Executors.newSingleThreadExecutor(r -> {
+						Thread t = new Thread(r);
+						t.setUncaughtExceptionHandler((thr, ex) -> ex.printStackTrace());
+						return t;
+					}));
 			executor.submit(job);
 		}
 	}
 
 	public Result<String> doAsyncPost(User sender, Message msg) {
-		if (msg.getId() != null) {
+		if (msg.getId() != null && !msg.getId().isEmpty()) {
 			if (deliveredMessages.containsKey(msg.getId()))
 				return ok(msg.getId());
 
@@ -303,6 +330,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			messagesCache.put(msg.getId(), msg);
 			if (msg.originId() != null)
 				messagesCache.put(msg.originId(), msg);
+
 			var localAddresses = getLocalRecipientAddresses(msg);
 			if (!localAddresses.isEmpty())
 				postToLocalInboxes(localAddresses, msg);
@@ -311,6 +339,8 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 			return Result.ok(msg.getId());
 		}
 
+		// Caso não-replicado (RestMessagesServer): comportamento original com
+		// propagação HTTP
 		return getCachedMessage(msg.originId()).mapValue(Message::getId).orElse(() -> {
 			msg.setId("%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet()));
 			messagesCache.put(msg.originId(), new Message(msg));
@@ -372,7 +402,7 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 					.thenWith((entries) -> {
 						hibernate.deleteMany(entries);
 						for (var e : entries)
-							gcDeletedMessageCache.put(e.mid, e.mid);
+							gcDeletedMessageCache.put(e.getMid(), e.getMid());
 						return ok();
 					});
 		});
@@ -394,21 +424,5 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		if (instance == null)
 			instance = new JavaMessages();
 		return instance;
-	}
-
-	public Result<Void> deleteLocalOnly(String mid) {
-		return deleteFromLocalInbox(mid);
-	}
-
-	public Message getMessageFromCache(String mid) {
-		return messagesCache.getIfPresent(mid);
-	}
-
-	public String generateNextId() {
-		return "%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet());
-	}
-
-	public boolean messageExists(String mid) {
-		return deliveredMessages.containsKey(mid);
 	}
 }

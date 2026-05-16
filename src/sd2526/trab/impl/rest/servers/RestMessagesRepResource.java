@@ -14,7 +14,7 @@ public class RestMessagesRepResource extends RestMessagesResource {
 
   @Override
   public String postMessage(String pwd, Message msg) {
-    if (msg.getId() != null) {
+    if (msg.getId() != null && !msg.getId().isEmpty()) {
       return msg.getId();
     }
 
