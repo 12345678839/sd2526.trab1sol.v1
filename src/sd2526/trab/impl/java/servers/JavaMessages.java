@@ -99,9 +99,9 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		try {
 			var result = DB.select("SELECT m.id FROM Message m", String.class);
 			if (result.isOK() && !result.value().isEmpty()) {
+				String localPrefix = THIS_DOMAIN + "+";
 				long maxId = result.value().stream()
-						.filter(id -> id != null && id.contains("+"))
-						.mapToLong(id -> {
+						.filter(id -> id != null && id.startsWith(localPrefix)).mapToLong(id -> {
 							try {
 								return Long.parseLong(id.split("\\+")[1]);
 							} catch (Exception e) {
@@ -285,10 +285,37 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 	}
 
 	public Result<String> doAsyncPost(User sender, Message msg) {
+		if (msg.getId() != null) {
+			if (deliveredMessages.containsKey(msg.getId()))
+				return ok(msg.getId());
+
+			try {
+				long n = Long.parseLong(msg.getId().split("\\+")[1]);
+				counter.updateAndGet(c -> Math.max(c, n));
+			} catch (Exception ignored) {
+			}
+
+			if (!msg.getSender().contains("<")) {
+				msg.setSender("%s <%s@%s>".formatted(
+						sender.getDisplayName(), sender.getName(), sender.getDomain()));
+			}
+
+			messagesCache.put(msg.getId(), msg);
+			if (msg.originId() != null)
+				messagesCache.put(msg.originId(), msg);
+			var localAddresses = getLocalRecipientAddresses(msg);
+			if (!localAddresses.isEmpty())
+				postToLocalInboxes(localAddresses, msg);
+
+			deliveredMessages.put(msg.getId(), true);
+			return Result.ok(msg.getId());
+		}
+
 		return getCachedMessage(msg.originId()).mapValue(Message::getId).orElse(() -> {
 			msg.setId("%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet()));
 			messagesCache.put(msg.originId(), new Message(msg));
-			msg.setSender("%s <%s@%s>".formatted(sender.getDisplayName(), sender.getName(), sender.getDomain()));
+			msg.setSender("%s <%s@%s>".formatted(
+					sender.getDisplayName(), sender.getName(), sender.getDomain()));
 			messagesCache.put(msg.getId(), msg);
 			var localAdresses = getLocalRecipientAddresses(msg);
 			var remoteAddresses = getRemoteRecipientAddresses(msg);
@@ -367,5 +394,21 @@ public class JavaMessages extends JavaBaseService implements Messages, AdminMess
 		if (instance == null)
 			instance = new JavaMessages();
 		return instance;
+	}
+
+	public Result<Void> deleteLocalOnly(String mid) {
+		return deleteFromLocalInbox(mid);
+	}
+
+	public Message getMessageFromCache(String mid) {
+		return messagesCache.getIfPresent(mid);
+	}
+
+	public String generateNextId() {
+		return "%s+%04d".formatted(THIS_DOMAIN, counter.incrementAndGet());
+	}
+
+	public boolean messageExists(String mid) {
+		return deliveredMessages.containsKey(mid);
 	}
 }

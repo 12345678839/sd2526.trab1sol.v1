@@ -1,6 +1,8 @@
 package sd2526.trab.kafka;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.logging.Logger;
 
@@ -18,10 +20,13 @@ public class KafkaReplicaManager {
   private static KafkaPublisher publisher;
   private static final ObjectMapper mapper = new ObjectMapper();
   private static String topic;
+  private static String localDomain;
 
   public static class RepOp {
     public String type;
-    public String name, pwd, mid;
+    public String name;
+    public String pwd;
+    public String mid;
     public Message msg;
 
     public RepOp() {
@@ -29,6 +34,7 @@ public class KafkaReplicaManager {
   }
 
   public static void init(String domain) {
+    localDomain = domain;
     topic = "replica-msgs-" + domain;
     publisher = KafkaPublisher.createPublisher(KAFKA_BROKERS);
 
@@ -49,35 +55,56 @@ public class KafkaReplicaManager {
 
         switch (op.type) {
           case "post":
-            if (op.msg != null && op.msg.getId() != null) {
+            if (op.mid != null && op.msg != null) {
+              op.msg.setId(op.mid);
+            }
+            try {
+              db.postMessage(op.pwd, op.msg);
+            } catch (Exception ignore) {
+            }
+
+            if (op.msg != null) {
+              propagateToRemoteDomains(op.msg);
+            }
+            break;
+
+          case "remotepost":
+            if (op.msg != null) {
               try {
-                java.lang.reflect.Method m = JavaMessages.class.getDeclaredMethod("directPost", String.class,
-                    Message.class);
-                m.invoke(db, op.pwd, op.msg);
-              } catch (Exception e) {
-                try {
-                  db.postMessage(op.pwd, op.msg);
-                } catch (Exception ignore) {
-                }
-              }
-            } else {
-              try {
-                db.postMessage(op.pwd, op.msg);
+                db.remotePostMessage(op.msg);
               } catch (Exception ignore) {
               }
             }
             break;
+
           case "remove":
             try {
               db.removeInboxMessage(op.name, op.mid, op.pwd);
             } catch (Exception ignore) {
             }
             break;
+
           case "delete":
             try {
-              db.deleteMessage(op.name, op.mid, op.pwd);
+              db.deleteLocalOnly(op.mid);
             } catch (Exception ignore) {
             }
+            if (op.msg != null) {
+              propagateDeleteToRemoteDomains(op.mid, op.msg);
+            }
+            break;
+
+          case "remotedelete":
+            if (op.mid != null) {
+              try {
+                db.remoteDeleteMessage(op.mid);
+              } catch (Exception ignore) {
+              }
+            }
+            break;
+
+          default:
+            Log.warning("Unknown operation type: " + op.type);
             break;
         }
 
@@ -87,8 +114,57 @@ public class KafkaReplicaManager {
         }
 
       } catch (Exception e) {
+        Log.warning("Error processing Kafka record: " + e.getMessage());
       }
     });
+  }
+
+  private static void propagateToRemoteDomains(Message msg) {
+    if (msg == null || msg.getDestination() == null || localDomain == null)
+      return;
+
+    Set<String> remoteDomains = msg.getDestination().stream()
+        .filter(addr -> addr != null && addr.contains("@"))
+        .map(addr -> addr.split("@")[1])
+        .filter(domain -> !domain.equals(localDomain))
+        .collect(Collectors.toSet());
+
+    for (String remoteDomain : remoteDomains) {
+      try {
+        RepOp remoteOp = new RepOp();
+        remoteOp.type = "remotepost";
+        remoteOp.msg = msg;
+        String remoteTopic = "replica-msgs-" + remoteDomain;
+        publisher.publish(remoteTopic, mapper.writeValueAsString(remoteOp));
+        Log.info("Propagated remotepost " + msg.getId() + " to " + remoteDomain);
+      } catch (Exception e) {
+        Log.warning("Failed to propagate post to " + remoteDomain + ": " + e.getMessage());
+      }
+    }
+  }
+
+  private static void propagateDeleteToRemoteDomains(String mid, Message msg) {
+    if (msg == null || msg.getDestination() == null || localDomain == null)
+      return;
+
+    Set<String> remoteDomains = msg.getDestination().stream()
+        .filter(addr -> addr != null && addr.contains("@"))
+        .map(addr -> addr.split("@")[1])
+        .filter(domain -> !domain.equals(localDomain))
+        .collect(Collectors.toSet());
+
+    for (String remoteDomain : remoteDomains) {
+      try {
+        RepOp remoteOp = new RepOp();
+        remoteOp.type = "remotedelete";
+        remoteOp.mid = mid;
+        String remoteTopic = "replica-msgs-" + remoteDomain;
+        publisher.publish(remoteTopic, mapper.writeValueAsString(remoteOp));
+        Log.info("Propagated remotedelete " + mid + " to " + remoteDomain);
+      } catch (Exception e) {
+        Log.warning("Failed to propagate delete to " + remoteDomain + ": " + e.getMessage());
+      }
+    }
   }
 
   public static void publish(String type, String name, String pwd, String mid, Message msg) {
@@ -101,6 +177,7 @@ public class KafkaReplicaManager {
       op.msg = msg;
       publisher.publish(topic, mapper.writeValueAsString(op));
     } catch (Exception e) {
+      Log.warning("Error publishing to Kafka: " + e.getMessage());
       e.printStackTrace();
     }
   }
